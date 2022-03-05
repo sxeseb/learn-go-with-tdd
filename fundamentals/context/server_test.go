@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -40,22 +41,25 @@ func (s *SpyStore) Fetch(ctx context.Context) (string, error) {
 	}
 }
 
-//func (s *SpyStore) assertWasCancelled() {
-//	s.t.Helper()
-//	if !s.cancelled {
-//		s.t.Error("store was not told to be cancel")
-//	}
-//}
+type SpyResponseWriter struct {
+	written bool
+}
 
-//func (s *SpyStore) assertWasNotCancelled() {
-//	s.t.Helper()
-//	if s.cancelled {
-//		s.t.Error("store was told to cancel")
-//	}
-//}
+func (s *SpyResponseWriter) Header() http.Header {
+	s.written = true
+	return nil
+}
+
+func (s *SpyResponseWriter) Write([]byte) (int, error) {
+	s.written = true
+	return 0, errors.New("not implemented")
+}
+
+func (s *SpyResponseWriter) WriteHeader(statusCode int) {
+	s.written = true
+}
 
 func TestServer(t *testing.T) {
-	// TODO follow up on "Incoming request to a server should[...]"
 
 	data := "hello, world"
 
@@ -73,19 +77,20 @@ func TestServer(t *testing.T) {
 		}
 	})
 
-	// t.Run("tells store to cancel work if request is cancelled", func(t *testing.T) {
-	// 	store := &SpyStore{response: data, t: t}
-	// 	srv := Server(store)
+	t.Run("tells store to cancel work if request is cancelled", func(t *testing.T) {
+		store := &SpyStore{response: data, t: t}
+		srv := Server(store)
 
-	// 	request := httptest.NewRequest(http.MethodGet, "/", nil)
+		request := httptest.NewRequest(http.MethodGet, "/", nil)
 
-	// 	cancellingCtx, cancel := context.WithCancel(request.Context())
-	// 	time.AfterFunc(5*time.Millisecond, cancel)
-	// 	request = request.WithContext(cancellingCtx)
+		cancellingCtx, cancel := context.WithCancel(request.Context())
+		time.AfterFunc(5*time.Millisecond, cancel)
+		request = request.WithContext(cancellingCtx)
 
-	// 	response := httptest.NewRecorder()
-
-	// 	srv.ServeHTTP(response, request)
-	// 	store.assertWasCancelled()
-	// })
+		response := &SpyResponseWriter{}
+		srv.ServeHTTP(response, request)
+		if response.written {
+			t.Error("a response should not have been written")
+		}
+	})
 }
